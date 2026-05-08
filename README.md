@@ -1,4 +1,4 @@
-# Livegram Clone Bot
+# Livegram Bot
 
 A Railway-ready Telegram Livegram-style bot. The main bot can receive `/clone YOUR_BOT_TOKEN` in private chat and start a clone bot for that user.
 
