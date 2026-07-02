@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+import uvicorn
+from fastapi import FastAPI
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType, ParseMode
@@ -24,15 +26,21 @@ from telegram.ext import (
     filters,
 )
 
-
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger("livegram-clone-bot")
 
-
 TOKEN_PATTERN = re.compile(r"^\d{6,}:[A-Za-z0-9_-]{20,}$")
+
+# --- Dummy FastAPI Server ---
+app = FastAPI(title="Livegram Clone Bot Health")
+
+@app.get("/")
+async def health_check():
+    """Dummy endpoint to keep the web service alive via pinging."""
+    return {"status": "online", "message": "Bot is running"}
 
 
 def utc_now() -> str:
@@ -743,23 +751,30 @@ async def main() -> None:
     )
     factory_runner = ManagedApplication(factory_bot.application, "factory bot")
 
+    # Start the bots
     await factory_runner.start()
     await clone_manager.start_existing_clones()
 
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop_event.set)
-        except (NotImplementedError, RuntimeError):
-            pass
+    # Configure the FastAPI server using Uvicorn
+    # This automatically picks up the PORT environment variable most platforms inject.
+    port = int(os.environ.get("PORT", 8000))
+    config = uvicorn.Config(
+        app=app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info",
+        loop="asyncio"
+    )
+    server = uvicorn.Server(config)
 
+    # Uvicorn will block here, handle signals gracefully, and keep the process alive
     try:
-        await stop_event.wait()
+        logger.info(f"Starting FastAPI server on port {port}...")
+        await server.serve()
     finally:
+        # This cleanup block runs when the web server shuts down
         await clone_manager.stop_all()
         await factory_runner.stop()
-
 
 if __name__ == "__main__":
     try:
